@@ -19,10 +19,10 @@ if __name__ == "__main__":
 
     learning_rate = 1e-4
     batch_size = 128
-    final_epoch = 200
+    final_epoch = 500
 
     val_batch_size = 64
-    test_freq = 10000
+    test_freq = 100
     point_num = 2048 # TODO: (测试集) 点云点数
 
     timestamp = time.strftime("model_%H_%M_%S_%m_%d_%y", time.localtime())
@@ -30,9 +30,12 @@ if __name__ == "__main__":
     os.makedirs(save_path, exist_ok=True)
 
     # Dataloader配置
+    # 数据集路径（修改为你的ModelNet40实际路径）
     data_dir = "data/ModelNet40"
+
+    # Dataloader配置
     training_data = PointCloudDataset(data_dir, split="train",use_normals=False)  # 指定训练集
-    training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True, collate_fn=torch.utils.data.dataloader.default_collate)
+    training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
 
     testing_data = PointCloudDataset(data_dir, split="test",use_normals=False)  # 指定测试集
     testing_dataloader = DataLoader(testing_data, batch_size=val_batch_size, shuffle=False)
