@@ -19,7 +19,7 @@ N = 2048 # 点云点数
 save_path = args.f + "_gen/point_cloud"
 
 if __name__ == "__main__":
-    state_dict = torch.load(args.f + "/model-500.pth", map_location=device)
+    state_dict = torch.load(args.f + "/model_500.pth", map_location=device)
     model = ModelComposition(latent_dim, max_t, beta_1, beta_T, device)
     model.load_state_dict(state_dict)
 

@@ -21,6 +21,7 @@ final_epoch = 500
 
 val_batch_size = 64
 test_freq = 100
+save_freq = 10
 point_num = 2048 # TODO: (测试时生成的) 点云点数
 
 if __name__ == "__main__":
@@ -60,7 +61,8 @@ if __name__ == "__main__":
             pbar.set_description(f"Epoch {epoch}/{final_epoch}, Current Loss:{loss.item():>6f}")
         
         pbar.close()
-        torch.save(model.state_dict(), save_path + f"/model-{epoch}.pth")
+        if not epoch % save_freq:
+            torch.save(model.state_dict(), save_path + f"/model_{epoch}.pth")
         print(f"Epoch {epoch}, Average Loss: {tot_loss / len(training_dataloader):>6f}")
 
         if not epoch % test_freq: # 测试
