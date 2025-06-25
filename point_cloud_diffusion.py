@@ -159,7 +159,6 @@ class PointCloudDataset(Dataset):
         return len(self.data_list)
     
     def __getitem__(self, idx):
-        """获取单个数据样本"""
         if idx in self.cache:
             data, label = self.cache[idx]
         else:
@@ -302,20 +301,6 @@ class DistributionEncoder(nn.Module):
 
         return mu, sigma
     
-# class LinearWithContext(nn.Module):
-#     # 辅助模块. 根据上下文动态调整的线性层, embedding的关键
-#     def __init__(self, in_dim, out_dim, ctx_dim):
-#         super().__init__()
-#         self.layer = nn.Linear(in_dim, out_dim)
-#         self.bias_layer = nn.Linear(ctx_dim, out_dim, bias=False)
-#         self.gate_layer = nn.Linear(ctx_dim, out_dim)
-
-#     def forward(self, X, ctx):
-#         gate = torch.sigmoid(self.gate_layer(ctx)).to(X)
-#         bias = self.bias_layer(ctx).to(X)
-
-#         return gate * self.layer(X) + bias
-
 class LinearWithContext(nn.Module):
     def __init__(self, in_dim, out_dim, ctx_dim):
         super().__init__()
@@ -324,36 +309,15 @@ class LinearWithContext(nn.Module):
         self.gate_layer = nn.Linear(ctx_dim, out_dim)
     
     def forward(self, X, ctx):
-        gate = torch.sigmoid(self.gate_layer(ctx))
-        bias = self.bias_layer(ctx)
+        # X: (B, N, D)
+
+        # (B, 1, D)
+        gate = torch.sigmoid(self.gate_layer(ctx)).unsqueeze(1)
+        bias = self.bias_layer(ctx).unsqueeze(1)
         
-        # 添加维度扩展，使形状变为 (batch_size, 1, out_dim)
-        gate = gate.unsqueeze(1)  # (B, 1, D)
-        bias = bias.unsqueeze(1)  # (B, 1, D)
-        
-        # self.layer(X) 形状为 (B, N, D)，现在可以正确广播
         return gate * self.layer(X) + bias
 
-# class PointwiseNet(nn.Module):
-#     # 模型\theta, 试图根据隐空间表达去噪
-#     def __init__(self, ctx_dim, emb_size = 3):
-#         super().__init__()
-
-#         self.net = nn.Sequential(
-#             LinearWithContext(3, 128, ctx_dim + emb_size), nn.ReLU(),
-#             LinearWithContext(128, 256, ctx_dim + emb_size), nn.ReLU(),
-#             LinearWithContext(256, 512, ctx_dim + emb_size), nn.ReLU(),
-#             LinearWithContext(512, 256, ctx_dim + emb_size), nn.ReLU(),
-#             LinearWithContext(256, 128, ctx_dim + emb_size), nn.ReLU(),
-#             LinearWithContext(128, 3, ctx_dim + emb_size)
-#         )
-
-#     def forward(self, X, beta, ctx):
-#         time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)], dim=1).to(X)
-#         ctx_with_emb = torch.cat((ctx, time_emb), dim=-1).to(X)
-
-#         return self.net(X, ctx_with_emb)
-
+# TODO: 不应该有这个设计, 应当在point-e版本弃用它
 class ContextWrapper(nn.Module):
     def __init__(self, module):
         super().__init__()
@@ -363,9 +327,10 @@ class ContextWrapper(nn.Module):
         return self.module(x, ctx)
 
 class PointwiseNet(nn.Module):
+    # 模型\theta, 试图根据隐空间表达去噪
     def __init__(self, ctx_dim):
         super().__init__()
-        self.net = nn.Sequential(
+        self.net = nn.Sequential(# TODO: 见上个TODO
             ContextWrapper(LinearWithContext(3, 128, ctx_dim+3)), nn.ReLU(),
             ContextWrapper(LinearWithContext(128, 256, ctx_dim+3)), nn.ReLU(),
             ContextWrapper(LinearWithContext(256, 512, ctx_dim+3)), nn.ReLU(),
@@ -374,42 +339,17 @@ class PointwiseNet(nn.Module):
             ContextWrapper(LinearWithContext(128, 3, ctx_dim+3))
         )
     
-    def forward(self, X, beta, ctx):
-        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)], dim=1)
+    def forward(self, X, beta, ctx: torch.Tensor):
+        # ctx: (B, latent_D)
+        B, _ = ctx.shape
+
+        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)]).view(1, -1).repeat(B, 1)
         ctx_with_emb = torch.cat([ctx, time_emb], dim=1)
         
-        # 手动传递上下文
-        x = X
         for layer in self.net:
-            if isinstance(layer, ContextWrapper):
-                x = layer(x, ctx_with_emb)
-            else:
-                x = layer(x)
-        return x
+            X = layer(X, ctx_with_emb) if isinstance(layer, ContextWrapper) else layer(X)# TODO: 见上个TODO
 
-# class Diffusion(nn.Module):
-#     # 扩散和计算损失
-#     def __init__(self, T, beta_1, beta_T, device):
-#         super().__init__()
-
-#         self.device = device
-#         self.T = T
-
-#         # betas 线性增加
-#         self.betas = torch.linspace(beta_1, beta_T, T).to(device)
-#         self.alphas = 1 - self.betas
-#         self.alpha_prod = torch.cumprod(self.alphas, dim=0)
-
-#     def diffuseForward(self, X: torch.Tensor, t = None):
-#         if t is None:
-#             t = torch.randint(1, self.T + 1, (X.shape[0],)).to(self.device)
-#         noise = torch.randn_like(X).to(self.device)
-#         coeff_t = self.alpha_prod[t]
-
-#         return torch.sqrt(coeff_t) * X + torch.sqrt(1 - coeff_t) * noise, self.betas[t], noise
-
-#     def sample(self, N, ctx: torch.Tensor):
-#         raise RuntimeError("Unimplemented")
+        return X
 
 class Diffusion(nn.Module):
     def __init__(self, T, beta_1, beta_T, device):
@@ -425,14 +365,10 @@ class Diffusion(nn.Module):
         if t is None:
             t = torch.randint(0, self.T, (batch_size,)).to(self.device)
         
-        # 扩展维度以匹配X的形状
         coeff_t = self.alphas_cumprod[t].view(-1, 1, 1)
         noise = torch.randn_like(X).to(self.device)
         X_t = torch.sqrt(coeff_t) * X + torch.sqrt(1 - coeff_t) * noise
         return X_t, self.betas[t], noise
-    
-    def sample(self, N, ctx: torch.Tensor):
-        raise RuntimeError("Unimplemented")
 
 class ModelComposition(nn.Module):
     # 组合以上模块
@@ -473,7 +409,6 @@ class ModelComposition(nn.Module):
         L_recons = nn.functional.mse_loss(eps_rand, eps_theta)
 
         # KL损失
-        # log_2pi = torch.log(torch.Tensor(2 * torch.pi).to(self.device))
         log_2pi = torch.log(torch.tensor(2 * math.pi, device=self.device))
         log_p_z = -0.5 * (self.latent_dim * log_2pi + (z * z).sum(dim=1))
         H_q = 0.5 * (self.latent_dim * (1 + log_2pi) + z_sigma.sum(dim=1))
@@ -484,14 +419,14 @@ class ModelComposition(nn.Module):
     def sample(self, N, ctx: torch.Tensor):
         batch_size = ctx.shape[0]
         X_t = torch.randn([batch_size, N, 3]).to(self.device)
-        for t in range(self.T, 0, -1):
-            z = torch.randn_like(X_t) if t > 1 else torch.zeros_like(X_t)
+        for t in range(self.T - 1, -1, -1):
+            z = torch.randn_like(X_t) if t > 0 else torch.zeros_like(X_t)
 
             alpha = self.diffusion.alphas[t]
             beta = self.diffusion.betas[t]
             alpha_prod = self.diffusion.alphas_cumprod[t]
-            alpha_prod_next = self.diffusion.alphas_cumprod[t - 1]
-            sigma = torch.sqrt(beta * (1 - alpha_prod_next) / (1 - alpha_prod)) if t > 1 else 0
+            alpha_prod_next = self.diffusion.alphas_cumprod[t - 1] if t > 0 else 1
+            sigma = torch.sqrt(beta * (1 - alpha_prod_next) / (1 - alpha_prod))
 
             eps_theta = self.theta(X_t, beta, ctx)
             X_t = (X_t - beta / torch.sqrt(1 - alpha_prod) * eps_theta) / torch.sqrt(alpha) + sigma * z
@@ -512,10 +447,13 @@ def calCD(sample_coluds: torch.Tensor, ref_clouds: torch.Tensor):
 
 def savePCFromBatch(X: torch.Tensor, save_path):
     # X: (B, N, 3)
+    print("Saving...")
     for b in range(X.shape[0]):
         cloud = X[b]
         cloud_path = save_path + f"_{b}.obj"
 
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
         with open(cloud_path, 'w') as f:
             f.write(f"# Vertices: {cloud.shape[0]}\n\n")
             for point in cloud:

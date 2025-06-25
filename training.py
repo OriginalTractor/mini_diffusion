@@ -8,32 +8,30 @@ import trimesh
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# 超参数
+max_t = 400
+beta_1 = 4e-3
+beta_T = 2e-2
+
+latent_dim = 256
+
+learning_rate = 1e-4
+batch_size = 128
+final_epoch = 500
+
+val_batch_size = 64
+test_freq = 100
+point_num = 2048 # TODO: (测试时生成的) 点云点数
+
 if __name__ == "__main__":
 
-    # 超参数
-    max_t = 400
-    beta_1 = 4e-3
-    beta_T = 2e-2
-
-    latent_dim = 256
-
-    learning_rate = 1e-4
-    batch_size = 128
-    final_epoch = 500
-
-    val_batch_size = 64
-    test_freq = 100
-    point_num = 2048 # TODO: (测试集) 点云点数
 
     timestamp = time.strftime("model_%H_%M_%S_%m_%d_%y", time.localtime())
     save_path = f"models/{timestamp}"
     os.makedirs(save_path, exist_ok=True)
 
     # Dataloader配置
-    # 数据集路径（修改为你的ModelNet40实际路径）
     data_dir = "data/ModelNet40"
-
-    # Dataloader配置
     training_data = PointCloudDataset(data_dir, split="train",use_normals=False)  # 指定训练集
     training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
 
@@ -49,8 +47,8 @@ if __name__ == "__main__":
     for epoch in range(1, final_epoch + 1):
         pbar = tqdm(range(len(training_dataloader)))
         tot_loss = 0
-        for batch, (X, _) in enumerate(training_dataloader): # 注意：解包为(X, label)
-            # X: 输入的点云batch, (B, N, 3)
+        for batch, (X, _) in enumerate(training_dataloader):
+            
             pbar.update()
 
             X = X.to(device)
@@ -70,6 +68,7 @@ if __name__ == "__main__":
             # TODO: 这是无条件生成的测试逻辑
             print(f"Epoch {epoch}, testing")
             for batch, X in enumerate(testing_dataloader):
+
                 # X: (V_B, N, 3), 对每个测试batch计算平均损失
                 with torch.no_grad():
                     z = torch.randn((val_batch_size, model.latent_dim)).to(model.device)
@@ -77,4 +76,4 @@ if __name__ == "__main__":
                     CD_list = calCD(X_sample, X)
                     print(f"Batch {batch}, Average CD: {torch.Tensor(CD_list).mean()}")
 
-    print("Training Ended")
+    print("Training ended")
