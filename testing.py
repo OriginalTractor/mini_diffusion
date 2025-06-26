@@ -13,7 +13,7 @@ args = parser.parse_args()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 batch_size = 8 # 生成点云数
-N = 2048 # 点云点数
+N = 8192 # 点云点数
 
 save_path = args.f + "_gen/point_cloud"
 

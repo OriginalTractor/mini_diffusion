@@ -14,6 +14,7 @@ class PointCloudDataset(Dataset):
         data_dir,
         split="train",
         num_points=2048,
+        category=None,
         transform=None,
         normalize=True,
         random_rotate=False,
@@ -21,82 +22,108 @@ class PointCloudDataset(Dataset):
         random_scale=False,
         cache_size=10000,
         uniform_sample=False,
-        normal_channel=True,
-        ignore_unknown_classes=True,
         use_normals=False,
     ):
-        """初始化ModelNet40格式的点云数据集"""
+        """初始化"""
         super().__init__()
         self.data_dir = data_dir
         self.split = split
         self.num_points = num_points
+        self.category = category
         self.transform = transform
         self.normalize = normalize
         self.random_rotate = random_rotate
         self.random_jitter = random_jitter
         self.random_scale = random_scale
         self.uniform_sample = uniform_sample
-        self.normal_channel = normal_channel
-        self.ignore_unknown_classes = ignore_unknown_classes
         self.use_normals = use_normals
-        
-        # 加载类别映射
-        self.classes = self._load_classes()
-        self.cat2id = {cat: i for i, cat in enumerate(self.classes)}
-        self.id2cat = {i: cat for i, cat in enumerate(self.classes)}
-        
-        # 加载数据文件列表
-        self.data_list = self._load_data_list()
-        
-        # 数据缓存
         self.cache = {}
         self.cache_size = cache_size
         
-    def _load_classes(self):
-        """加载类别名称列表"""
-        classes_file = os.path.join(self.data_dir, 'modelnet40_shape_names.txt')
-        with open(classes_file, 'r') as f:
-            return [line.strip() for line in f]
+        # 加载类别映射
+        self.cat2synset, self.synset2cat = self._load_category_mapping()
+        self.cat2id = {cat: i for i, cat in enumerate(self.cat2synset.keys())}
+        self.id2cat = {i: cat for i, cat in enumerate(self.cat2synset.keys())}
+        
+        # 加载数据列表
+        self.data_list = self._load_data_list()
+        
+        # 预加载缓存
+        self._preload_cache(num_workers=4)
+    
+    def _load_category_mapping(self):
+        """加载synsetoffset到类别的映射"""
+        mapping_file = os.path.join(self.data_dir, "synsetoffset2category.txt")
+        cat2synset = {}
+        synset2cat = {}
+        with open(mapping_file, "r") as f:
+            for line in f:
+                if line.strip():
+                    cat, synset = line.strip().split()
+                    cat2synset[cat] = synset
+                    synset2cat[synset] = cat
+        return cat2synset, synset2cat
     
     def _load_data_list(self):
-        """加载数据文件列表"""
-        split_file = os.path.join(self.data_dir, f'modelnet40_{self.split}.txt')
-        with open(split_file, 'r') as f:
-            shape_ids = [line.strip() for line in f]
+        """加载数据列表（强制移除shape_data前缀）"""
+        if self.category not in self.cat2synset:
+            raise ValueError(f"目标类别 '{self.category}' 不在映射文件中")
+        
+        target_synset = self.cat2synset[self.category]
+        split_file = os.path.join(
+            self.data_dir, "train_test_split", f"shuffled_{self.split}_file_list.json"
+        )
+        
+        # 读取JSON文件
+        import json
+        try:
+            with open(split_file, "r") as f:
+                shape_ids = json.load(f)
+            #print(f"从{split_file}读取到{len(shape_ids)}个模型ID")
+        except Exception as e:
+            raise ValueError(f"读取JSON文件失败：{e}")
         
         data_list = []
-        for shape_id in shape_ids:
-            # 提取类别名称
-            parts = shape_id.split('_')
-            cat = parts[0]
-            
-            # 处理特殊类别名称
-            if cat == 'flower' and len(parts) > 1 and parts[1] == 'pot':
-                cat = 'flower_pot'
-            elif cat == 'glass' and len(parts) > 1 and parts[1] == 'box':
-                cat = 'glass_box'
-            elif cat == 'night' and len(parts) > 1 and parts[1] == 'stand':
-                cat = 'night_stand'
-            elif cat == 'range' and len(parts) > 1 and parts[1] == 'hood':
-                cat = 'range_hood'
-            elif cat == 'tv' and len(parts) > 1 and parts[1] == 'stand':
-                cat = 'tv_stand'
-            
-            # 检查类别是否存在
-            if cat not in self.cat2id:
-                if self.ignore_unknown_classes:
-                    print(f"警告: 忽略未知类别 '{cat}' 中的样本 {shape_id}")
-                    continue
-                else:
-                    raise KeyError(f"未知类别: '{cat}'")
-            
-            cat_id = self.cat2id[cat]
-            file_path = os.path.join(self.data_dir, cat, f'{shape_id}.txt')
-            data_list.append((file_path, cat_id))
+        valid_count = 0
+        missing_count = 0
+        non_chair_count = 0
+        prefix_removed_count = 0
         
-        if len(data_list) == 0:
-            raise ValueError(f"在 {split_file} 中没有找到有效类别")
+        for shape_id in shape_ids:
+            # 强制移除shape_data/前缀
+            if shape_id.startswith("shape_data/"):
+                shape_id = shape_id.split("shape_data/")[-1]
+                prefix_removed_count += 1
+                #print(f"已移除shape_data前缀: {shape_id}")
             
+            # 解析模型ID为synsetoffset/shape_name
+            try:
+                synsetoffset, shape_name = shape_id.split("/", 1)  # 最多分割一次
+            except ValueError:
+                print(f"警告：无效模型ID格式 '{shape_id}'，应为'synsetoffset/shape_name'，跳过")
+                continue
+            
+            # 过滤非目标类别
+            if synsetoffset != target_synset:
+                non_chair_count += 1
+                continue
+            
+            # 构建点云文件路径
+            point_file = os.path.join(
+                self.data_dir, synsetoffset, "points", f"{shape_name}.pts"
+            )
+            
+            # 检查文件存在性
+            if os.path.exists(point_file):
+                data_list.append((point_file, self.cat2id[self.category]))
+                valid_count += 1
+            else:
+                missing_count += 1
+                print(f"警告：点云文件缺失 - {point_file}")
+        
+        if not data_list:
+            raise ValueError(f"未找到有效点云文件，请检查路径和数据完整性")
+        
         return data_list
     
     def _preload_cache(self, num_workers):
@@ -111,12 +138,44 @@ class PointCloudDataset(Dataset):
                 try:
                     self.cache[idx] = future.result()
                 except Exception as e:
-                    print(f"Failed to load data at index {idx}: {e}")
+                    print(f"加载索引 {idx} 数据失败: {e}")
     
     def _load_data(self, idx):
-        """加载单个数据样本"""
+        """加载点云文件"""
         file_path, label = self.data_list[idx]
-        points = np.loadtxt(file_path, delimiter=',').astype(np.float32)
+        
+        try:
+            # 尝试读取文件
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            points = []
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 解析坐标
+                parts = line.split()
+                if parts and parts[0].upper() == "VRTX":
+                    coords = parts[1:4]
+                else:
+                    coords = parts[:3]
+                
+                if len(coords) == 3:
+                    try:
+                        points.append([float(coords[0]), float(coords[1]), float(coords[2])])
+                    except ValueError:
+                        print(f"警告：坐标解析失败 - {coords}")
+            
+            points = np.array(points, dtype=np.float32)
+            
+        except Exception as e:
+            print(f"加载{file_path}失败: {e}")
+            # 生成随机点云作为备用
+            points = np.random.uniform(-0.5, 0.5, (self.num_points, 3)).astype(np.float32)
+        
+        # 点云采样
         if points.shape[0] > self.num_points:
             if self.uniform_sample:
                 points = self._fps_sample(points, self.num_points)
@@ -127,15 +186,7 @@ class PointCloudDataset(Dataset):
             indices = np.random.choice(points.shape[0], self.num_points, replace=True)
             points = points[indices]
         
-        # 提取坐标和法线（必要性不大，但还是留着吧，目前默认self.use_normals=False）
-        if self.use_normals and points.shape[1] >= 6:
-            coords = points[:, :3]
-            normals = points[:, 3:6]
-            data = np.hstack([coords, normals])
-        else:
-            data = points[:, :3]
-        
-        return data, label
+        return points, label
     
     def _fps_sample(self, points, n_samples):
         """最远点采样(FPS)"""
@@ -177,7 +228,6 @@ class PointCloudDataset(Dataset):
         
         return data, label
     
-
     def _rotate_point_cloud(self, data):
         """随机旋转点云"""
         rotation_angle = np.random.uniform() * 2 * np.pi
@@ -203,21 +253,16 @@ class PointCloudDataset(Dataset):
         return torch.from_numpy(scaled_data).float()
 
 def collate_fn(batch, max_points=None):
-    """把可能包含不同数量的点的不同点云样本，统一处理成相同大小的批次"""
-    if max_points is None:
-        return default_collate(batch)
-
+    """统一处理不同大小的点云批次"""
     data_list, label_list = [], []
     for data, label in batch:
-        if data.shape[0] > max_points:
+        if max_points and data.shape[0] > max_points:
             indices = torch.randperm(data.shape[0])[:max_points]
             data = data[indices]
         data_list.append(data)
         label_list.append(label)
-
     data_batch = torch.stack(data_list, dim=0)
     label_batch = torch.stack(label_list, dim=0)
-    
     return data_batch, label_batch
 
 def get_dataloader(
@@ -225,6 +270,7 @@ def get_dataloader(
     split='train',
     batch_size=32,
     num_points=1024,
+    category=None,
     num_workers=4,
     shuffle=True,
     pin_memory=True,
@@ -233,21 +279,20 @@ def get_dataloader(
     use_normals=False,
     cache_size=10000,
     uniform_sample=True,
-    max_points=None,
 ):
-    """获取数据加载器"""
+    """获取指定类别的数据加载器"""
     dataset = PointCloudDataset(
-        data_dir=data_dir, 
+        data_dir=data_dir,
         split=split,
         num_points=num_points,
+        category=category,
         transform=transform,
         use_normals=use_normals,
         cache_size=cache_size,
-        uniform_sample=uniform_sample,  
+        uniform_sample=uniform_sample,
     )
     
-    collate = partial(collate_fn, max_points=max_points) if max_points else default_collate
-    
+    collate = partial(collate_fn, max_points=num_points)
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -338,10 +383,15 @@ class PointwiseNet(nn.Module):
         )
     
     def forward(self, X, beta, ctx: torch.Tensor):
-        # ctx: (B, latent_D)
-        B, _ = ctx.shape
+        # X: (B, N, 3), beta: (), ctx: (B, latent_D)
 
-        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)]).view(1, -1).repeat(B, 1)
+        B, _ = ctx.shape
+        beta = beta.view((1,))
+
+        # (B, 3)
+        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)], dim=-1).repeat(B, 1)
+
+        # (B, latent_D + 3)
         ctx_with_emb = torch.cat([ctx, time_emb], dim=1)
         
         for layer in self.net:
@@ -376,11 +426,13 @@ class ModelComposition(nn.Module):
         self.device = device
         self.latent_dim = latent_dim
         self.T = T
-        self.phi = DistributionEncoder(latent_dim)
+        self.phi = DistributionEncoder(latent_dim).to(device)
         self.diffusion = Diffusion(T, beta_1, beta_T, device)
-        self.theta = PointwiseNet(latent_dim)
+        self.theta = PointwiseNet(latent_dim).to(device)
 
     def calLoss(self, X):
+
+        X = X.to(self.device)
 
         # 映到隐空间
         z_mu, z_sigma = self.phi(X)
@@ -389,18 +441,6 @@ class ModelComposition(nn.Module):
         # 加噪
         t = torch.randint(0, self.T, (X.shape[0],)).to(self.device)
         X_t, beta, eps_rand = self.diffusion.diffuseForward(X, t=t)
-
-        r"""以下损失函数为
-        $\mathcal{L}_{\text{recons}} = \Vert \epsilon - \epsilon_\theta(\sqrt{\bar{\alpha}_t}X_0 + \sqrt{1 - \bar{\alpha}_t}\epsilon, t) \Vert^2$
-
-        $\log p(z) = -\frac{D}{2}\log(2\pi) - \frac{1}{2}|z|^2$
-
-        $H(q(z|X_0)) = \frac{D}{2}(1 + \log(2\pi)) + \frac{1}{2}\sum_{j=1}^D \log(\sigma_j^2)$
-
-        $\mathcal{L}_{\text{KL}} = -D_{\text{KL}} = \log p(z) + H(q(z|X_0))$
-
-        TODO: 为什么KL这样算?
-        """
 
         # 重建损失
         eps_theta = self.theta(X_t, beta, z)
@@ -450,8 +490,7 @@ def savePCFromBatch(X: torch.Tensor, save_path):
         cloud = X[b]
         cloud_path = save_path + f"_{b}.obj"
 
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
+        os.makedirs(save_path, exist_ok=True)
         with open(cloud_path, 'w') as f:
             f.write(f"# Vertices: {cloud.shape[0]}\n\n")
             for point in cloud:

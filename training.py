@@ -15,12 +15,14 @@ latent_dim = 256
 
 learning_rate = 1e-4
 batch_size = 128
-final_epoch = 500
+final_epoch = 5000
 
 val_batch_size = 64
-test_freq = 100
-save_freq = 10
-point_num = 2048 # TODO: (测试时生成的) 点云点数
+test_freq = 1000
+save_freq = 100
+point_num = 2048 # 测试时生成的点云点数
+
+category = "Chair"
 
 if __name__ == "__main__":
 
@@ -30,13 +32,13 @@ if __name__ == "__main__":
     os.makedirs(save_path, exist_ok=True)
 
     # Dataloader配置
-    data_dir = "data/ModelNet40"
-    training_data = PointCloudDataset(data_dir, split="train",use_normals=False)  # 指定训练集
+    data_dir = "data/ShapeNet"
+    training_data = PointCloudDataset(data_dir, split="train", num_points=point_num, category=category)  # 指定训练集
     training_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
 
-    testing_data = PointCloudDataset(data_dir, split="test",use_normals=False)  # 指定测试集
+    testing_data = PointCloudDataset(data_dir, split="test", num_points=point_num, category=category)  # 指定测试集
     testing_dataloader = DataLoader(testing_data, batch_size=val_batch_size, shuffle=False)
-
+    
     # 模型配置
     model = ModelComposition(latent_dim, max_t, beta_1, beta_T, device).to(device)
     model.train()
