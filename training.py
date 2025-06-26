@@ -4,8 +4,6 @@ import time
 import argparse
 from tqdm import tqdm
 
-import trimesh
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 超参数

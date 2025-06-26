@@ -7,8 +7,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 import concurrent.futures
 from functools import partial
-from sklearn.neighbors import KDTree
-import random
 
 class PointCloudDataset(Dataset):
     def __init__(
