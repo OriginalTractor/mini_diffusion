@@ -1,12 +1,3 @@
-这个仓库用于我们的队伍沟通. 上传必要的python源文件.
-
-复制命令: 转到目标文件夹, 并确保其中有存储训练数据的`\data`子目录. 键入
-
-```bash
-git init
-git pull https://github.com/OriginalTractor/mini_diffusion
-```
-
 # // TODO 以下是预撰写的项目README.
 
 ## 环境配置
@@ -59,9 +50,9 @@ python testing.py --f dir_name --v version
 
 模型中可训练的两个子模型结构如下:
 
-模型$\theta$通过输入隐空间表达$z, $时间步$t$, /* TODO: 文本emb? */和加噪后点云$X_t$, 输出预测的加噪前点云$X_0$. 模型用输入的隐空间表达和条件表示合成张量`ctx_with_emb` ($z_\text{emb}$):
+模型$\theta$通过输入隐空间表达$z$, 时间步$t$, 文本信息$\text{emb}$和加噪后点云$X_t$, 输出预测的加噪前点云$X_0$. 模型用输入的隐空间表达和条件表示合成张量`ctx_with_emb` ($z_\text{emb}$):
 
-// TODO
+// TODO: 公式
 
 使$z_\text{emb}$通过融合上下文的线性层:
 $$
@@ -106,7 +97,7 @@ H(q(z|X_0)) = \frac{D}{2}(1 + \log(2\pi)) + \frac{1}{2}\sum_{j=1}^D \log(\sigma_
 
 ## 实验设置
 
-// TODO
+// TODO: 讲讲参数是怎么设置的
 
 ## 结果分析
 
