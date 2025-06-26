@@ -7,7 +7,7 @@ from tqdm import tqdm
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 超参数
-max_t = 400
+max_t = 1000
 beta_1 = 4e-3
 beta_T = 2e-2
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     testing_data = PointCloudDataset(data_dir, split="test", num_points=point_num, category=category)  # 指定测试集
     testing_dataloader = DataLoader(testing_data, batch_size=val_batch_size, shuffle=False)
-    
+
     # 模型配置
     model = ModelComposition(latent_dim, max_t, beta_1, beta_T, device).to(device)
     model.train()
