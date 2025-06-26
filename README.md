@@ -36,6 +36,10 @@ python testing.py --f dir_name --v version
 
 我们的目标是实现基于点云扩散模型的Point-E模型. // TODO: 也有可能是多类生成模型. 
 
+## 分工
+
+// TODO
+
 ## 数据读取和预处理
 
 我们的模型数据取自 // TODO: 提供来源
