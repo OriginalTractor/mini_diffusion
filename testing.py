@@ -1,4 +1,4 @@
-from point_cloud_diffusion import *
+from diffusion_model import *
 from training import *
 
 import time
