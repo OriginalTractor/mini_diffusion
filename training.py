@@ -17,7 +17,7 @@ latent_dim = 256
 
 learning_rate = 1e-4
 batch_size = 128
-final_epoch = 1500
+final_epoch = 3000
 
 val_batch_size = 64
 test_freq = 300
