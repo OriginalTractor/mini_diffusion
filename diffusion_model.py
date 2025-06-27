@@ -64,18 +64,21 @@ class PointwiseNet(nn.Module):
     # 模型\theta, 试图根据隐空间表达去噪
     def __init__(self, ctx_dim):
         super().__init__()
+        self.emb_dim = 11
         self.net = nn.Sequential(
-            LinearWithContext(3, 128, ctx_dim+3), nn.ReLU(),
-            LinearWithContext(128, 256, ctx_dim+3), nn.ReLU(),
-            LinearWithContext(256, 512, ctx_dim+3), nn.ReLU(),
-            LinearWithContext(512, 256, ctx_dim+3), nn.ReLU(),
-            LinearWithContext(256, 128, ctx_dim+3), nn.ReLU(),
-            LinearWithContext(128, 3, ctx_dim+3)
+            LinearWithContext(3, 128, ctx_dim + self.emb_dim), nn.ReLU(),
+            LinearWithContext(128, 256, ctx_dim + self.emb_dim), nn.ReLU(),
+            LinearWithContext(256, 512, ctx_dim + self.emb_dim), nn.ReLU(),
+            LinearWithContext(512, 256, ctx_dim + self.emb_dim), nn.ReLU(),
+            LinearWithContext(256, 128, ctx_dim + self.emb_dim), nn.ReLU(),
+            LinearWithContext(128, 3, ctx_dim + self.emb_dim)
         )
+        self.label_emb = nn.Embedding(16, 8)
 
-    def forward(self, X, beta: torch.Tensor, ctx: torch.Tensor):
+    def forward(self, X, beta, labels: torch.Tensor, ctx: torch.Tensor):
         # X: (B, N, 3), 
         # beta: () [batch内时间步相同] or (B,) [batch内时间步不同] 
+        # labels: (B,)
         # ctx: (B, latent_D)
 
         B, _ = ctx.shape
@@ -84,11 +87,12 @@ class PointwiseNet(nn.Module):
         if beta.dim() == 0:
             beta = beta.view((1,)).repeat(B)
 
-        # (B, 3)
-        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)], dim=-1)
+        # (B, 3), (B, 8)
+        label_emb = self.label_emb(labels).to(X)
+        time_emb = torch.stack([beta, torch.sin(beta), torch.cos(beta)], dim=-1).to(X)
 
-        # (B, latent_D + 3)
-        ctx_with_emb = torch.cat([ctx, time_emb], dim=1)
+        # (B, latent_D + 11)
+        ctx_with_emb = torch.cat([ctx, time_emb, label_emb], dim=1)
         
         for layer in self.net:
             X = layer(X, ctx_with_emb) if isinstance(layer, LinearWithContext) else layer(X)
@@ -96,6 +100,7 @@ class PointwiseNet(nn.Module):
         return X
 
 class Diffusion(nn.Module):
+    # 扩散模块
     def __init__(self, T, beta_1, beta_T, device):
         super().__init__()
         self.T = T
@@ -126,7 +131,7 @@ class ModelComposition(nn.Module):
         self.diffusion = Diffusion(T, beta_1, beta_T, device)
         self.theta = PointwiseNet(latent_dim).to(device)
 
-    def calLoss(self, X):
+    def calLoss(self, X, labels: torch.Tensor):
 
         X = X.to(self.device)
 
@@ -139,7 +144,7 @@ class ModelComposition(nn.Module):
         X_t, beta, eps_rand = self.diffusion.diffuseForward(X, t=t)
 
         # 重建损失
-        eps_theta = self.theta(X_t, beta, z)
+        eps_theta = self.theta(X_t, beta, labels, z)
         L_recons = nn.functional.mse_loss(eps_rand, eps_theta)
 
         # KL损失
@@ -150,7 +155,7 @@ class ModelComposition(nn.Module):
 
         return L_recons + L_kl
     
-    def sample(self, N, ctx: torch.Tensor):
+    def sample(self, N, labels: torch.Tensor, ctx: torch.Tensor):
         batch_size = ctx.shape[0]
         X_t = torch.randn([batch_size, N, 3]).to(self.device)
         for t in range(self.T - 1, -1, -1):
@@ -160,9 +165,10 @@ class ModelComposition(nn.Module):
             beta = self.diffusion.betas[t]
             alpha_prod = self.diffusion.alphas_cumprod[t]
             alpha_prod_next = self.diffusion.alphas_cumprod[t - 1] if t > 0 else 1
+
             sigma = torch.sqrt(beta * (1 - alpha_prod_next) / (1 - alpha_prod))
 
-            eps_theta = self.theta(X_t, beta, ctx)
+            eps_theta = self.theta(X_t, beta, labels, ctx)
             X_t = (X_t - beta / torch.sqrt(1 - alpha_prod) * eps_theta) / torch.sqrt(alpha) + sigma * z
 
         return X_t
@@ -171,6 +177,7 @@ def calCD(sample_coluds: torch.Tensor, ref_clouds: torch.Tensor):
     # 倒角距离
     batch = sample_coluds.shape[0]
     CDs = []
+
     for b in range(batch):
         sample, ref = sample_coluds[b], ref_clouds[b]
         dist_mat = torch.cdist(sample, ref)
@@ -182,6 +189,7 @@ def calCD(sample_coluds: torch.Tensor, ref_clouds: torch.Tensor):
 def savePCFromBatch(X: torch.Tensor, save_path):
     # X: (B, N, 3)
     print("Saving...")
+
     for b in range(X.shape[0]):
         cloud = X[b]
         cloud_path = save_path + f"_{b}.obj"

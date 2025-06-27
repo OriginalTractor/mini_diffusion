@@ -9,8 +9,6 @@ Python版本: 3.9.18
 pip install numpy torch tqdm
 ```
 
-// TODO: 最后提交前检查是否导入了新模块
-
 ## 数据集获取 
 
 // TODO: 获取途径
@@ -23,16 +21,12 @@ pip install numpy torch tqdm
 ```bash
 python training.py
 ```
-// TODO: 最后提交前检查是否需要更多参数
-
 ## 测试
 假定模型保存在`dir_name`目录下. 运行
 ```bash
-python testing.py --f dir_name --v version
+python testing.py --f dir_name --v version --t gen_type
 ```
-// TODO: 最后提交前检查是否需要更多参数
-
-以用第`version`个epoch保存的模型进行生成, `version`的默认值为最大训练轮数. 生成的点云以`.obj`文件形式保存于`dir_name + "_gen/point_cloud"`目录下. 
+以用第`version`个epoch保存的模型进行生成`gen_type`类别的点云. `version`的默认值为最大训练轮数, `gen_type`的默认值为`Chair`. 生成的点云以`.obj`文件形式保存于`dir_name + "_gen/point_cloud"`目录下. 
 
 # // TODO 以下是预撰写的实验报告.
 
@@ -58,18 +52,18 @@ python testing.py --f dir_name --v version
 
 模型中可训练的两个子模型结构如下:
 
-模型$\theta$通过输入隐空间表达$z$, 时间步$t$, 类别信息$\text{emb}$和加噪后点云$X_t$, 输出预测的加噪前点云$X_0$. 模型用输入的隐空间和其它表达合成张量`ctx_with_emb` ($z_\text{emb}$):
+模型$\theta$通过输入隐空间表达$z$, 时间步$t$, 类别信息$\text{emb}$和加噪后点云$X_t$, 输出预测的加噪前点云$X_0$. 模型用输入的隐空间表达和类别表示合成张量`ctx_with_emb` ($z_\text{emb}$). 
 
-// TODO: 公式
-
-使$z_\text{emb}$通过融合上下文的线性层:
+接下来, 使$z_\text{emb}$通过融合上下文的线性层:
 $$
 \text{Gate}(z_\text{emb}) = \text{sigmoid}(W_\text{G}z_\text{emb} + b_\text{G})\\
 \text{Bias}(z_\text{emb}) = W_\text{B}z_\text{emb}\\
 \text{Linear}'(X, z_\text{emb}) = \text{Gate}(z_\text{emb}) \times \text{Linear}(X) + \text{Bias}(z_\text{emb})
 $$
 
-和激活函数$\text{ReLU}$的交替层, 输出对噪声的估计. 实现见于类`PointwiseNet`.
+和激活函数$\text{ReLU}$的交替层, 输出对噪声的估计. 
+
+$\theta$的实现见于类`PointwiseNet`.
 
 模型$\varphi$预测点云的隐空间表达, 采用不含T-Net结构的PointNet模型. 实现见于类`DistributionEncoder`.
 
@@ -105,7 +99,7 @@ H(q(z|X_0)) = \frac{D}{2}(1 + \log(2\pi)) + \frac{1}{2}\sum_{j=1}^D \log(\sigma_
 
 ## 实验设置
 
-// TODO: 讲讲参数是怎么设置的
+// TODO: 讲讲参数是怎么设置的即可.参考`training.py`.
 
 ## 结果分析
 

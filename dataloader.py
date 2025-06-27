@@ -42,7 +42,7 @@ class PointCloudDataset(Dataset):
         self.cat2synset, self.synset2cat = self._load_category_mapping()
         self.cat2id = {cat: i for i, cat in enumerate(self.cat2synset.keys())}
         self.id2cat = {i: cat for i, cat in enumerate(self.cat2synset.keys())}
-        
+    
         # 加载数据列表
         self.data_list = self._load_data_list()
         
