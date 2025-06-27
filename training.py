@@ -69,7 +69,7 @@ if __name__ == "__main__":
             torch.save(model.state_dict(), save_path + f"/model_{epoch}.pth")
         print(f"Epoch {epoch}, average loss: {tot_loss / len(training_dataloader):>6f}")
 
-        # 以下是测试代码, 但是测试效率极低
+        # 以下是训练中途测试并计算CD loss的代码, 但是测试效率极低
 
         # if not epoch % test_freq:
 
