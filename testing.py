@@ -23,7 +23,7 @@ if __name__ == "__main__":
     model = ModelComposition(latent_dim, max_t, beta_1, beta_T, device)
     model.load_state_dict(state_dict)
 
-    labels = torch.tensor([name_dict[args.t] for _ in range(batch_size)])
+    labels = torch.tensor([name_dict[args.t] for _ in range(batch_size)]).to(device)
 
     with torch.no_grad():
         print("Sampling...")

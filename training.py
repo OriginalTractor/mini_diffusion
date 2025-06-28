@@ -57,6 +57,7 @@ if __name__ == "__main__":
             pbar.update()
 
             X = X.to(device)
+            labels = labels.to(device)
             loss = model.calLoss(X, labels)
             loss.backward()
             tot_loss += loss.item()
