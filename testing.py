@@ -1,7 +1,11 @@
 from diffusion_model import *
-from training import *
-
 import argparse
+
+max_t = 600
+beta_1 = 4e-3
+beta_T = 2e-2
+latent_dim = 256
+final_epoch = 3000
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--f", help="directory name", type=str)
@@ -11,8 +15,8 @@ args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-batch_size = 8 # 生成点云数
-N = 8192 # 点云点数
+batch_size = 1 # 生成点云数
+N = 4096 # 点云点数
 
 name_dict = {"Airplane": 0, "Bag": 1, "Cap": 2, "Car": 3, "Chair": 4, "Earphone": 5, "Guitar": 6, "Knife": 7, "Lamp": 8, "Laptop": 9, "Motorbike": 10, "Mug": 11, "Pistol": 12, "Rocket": 13, "Skateboard": 14, "Table": 15}
 
