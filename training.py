@@ -28,7 +28,7 @@ val_batch_size = 64
 test_freq = 300
 save_freq = 30
 
-categories = {"Airplane", "Car", "Chair", "Table", "Pistol"} # 大作业文档中建议中的一个类是Rifle, 但是我们的文件中没有这个类别, 故用Pistol代替之
+categories = {"Airplane", "Car", "Chair", "Table", "Pistol"} # 大作业文档中建议中的一个类是Rifle, 但是我们的数据中没有这个类别, 故用Pistol代替之
 
 if __name__ == "__main__":
 
